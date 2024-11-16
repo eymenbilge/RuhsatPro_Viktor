@@ -3,11 +3,9 @@ from viktor import File
 from pathlib import Path
 import time
 from viktor.parametrization import (
-    BooleanField,
     FileField,
     Text,
-    IsFalse,
-    Lookup,
+
 )
 from ifcopenshell import open as openIFC
 import pandas as pd
@@ -77,7 +75,6 @@ def get_filtered_ifc_file(params, **kwargs) -> File:
 
 class Parametrization(vkt.Parametrization):
     page_1 = vkt.Page('IFC', views=["get_ifc_view"])
-    page_1.options = vkt.MultiSelectField('This is a MultiSelectField', options=['Net Alan', 'Emsal Alan', 'Brüt Alan'], default=['Net Alan', 'Emsal Alan', 'Brüt Alan'])
     page_1.option = vkt.OptionField('This is an OptionField', options=['Net Alan', 'Emsal Alan', 'Brüt Alan'], default='Net Alan')
 
 
@@ -317,7 +314,7 @@ class Controller(vkt.ViktorController):
 
     @vkt.IFCAndDataView("IFC and data view", duration_guess=10)
     def get_ifc_view(self, params, **kwargs):
-        if params.page_1.options:
+        if params.page_1.option:
             model = get_filtered_ifc_file(params)
         else:
             model = _use_correct_file(params)
