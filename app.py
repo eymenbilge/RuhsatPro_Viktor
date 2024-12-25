@@ -164,7 +164,7 @@ class Controller(vkt.ViktorController):
                             blok_no = get_pset_property(pset, 'BlokNo')
                         elif pset.Name == 'Pset_EmsalAlanTipi':
                             emsal_alan_tipi = get_pset_property(pset, 'EmsalAlanTipi')
-                        elif pset.Name == 'Pset_MahalNetAlanTipi':
+                        elif pset.Name == 'Pset_NetAlanTipi':
                             eklenti_degil = get_pset_property(pset, 'Eklenti/Degil')
             
             building_storey = get_building_storey(space)
