@@ -207,7 +207,7 @@ class Controller(vkt.ViktorController):
             aggfunc='sum'
         ).reset_index()
         # Calculate the new column
-        emsal_ozet_tablo['TOPLAM EMSAL DIŞI'] = emsal_ozet_tablo.get('30/70 KAPSAMINDA EMSAL DIŞI ALAN', 0) + emsal_ozet_tablo.get('DOĞRUDAN EMSAL DIŞI ALAN', 0)
+        emsal_ozet_tablo['TOPLAM EMSAL DIŞI'] = emsal_ozet_tablo.get('%30 KAPSAMINDA EMSAL DIŞI ALAN', 0) + emsal_ozet_tablo.get('DOĞRUDAN EMSAL DIŞI ALAN', 0)
         # Rename axis
         emsal_ozet_tablo = emsal_ozet_tablo.rename_axis(None, axis=0)
         insaat_alan_bylevel = df_bagimsiz_bolum.pivot_table(
@@ -221,12 +221,12 @@ class Controller(vkt.ViktorController):
 
         emsal_ozet_tablo_all = emsal_ozet_tablo_all.rename(columns={'Area': 'İNŞAAT ALANI'})
         emsal_ozet_tablo_all['EMSAL ALANI'] = emsal_ozet_tablo_all['İNŞAAT ALANI'] - emsal_ozet_tablo_all['TOPLAM EMSAL DIŞI']
-        desired_order = ['Level', 'İNŞAAT ALANI', 'TOPLAM EMSAL DIŞI', '30/70 KAPSAMINDA EMSAL DIŞI ALAN', 'DOĞRUDAN EMSAL DIŞI ALAN', 'EMSAL ALANI']
+        desired_order = ['Level', 'İNŞAAT ALANI', 'TOPLAM EMSAL DIŞI', '%30 KAPSAMINDA EMSAL DIŞI ALAN', 'DOĞRUDAN EMSAL DIŞI ALAN', 'EMSAL ALANI']
         emsal_ozet_tablo_all =emsal_ozet_tablo_all[desired_order]
-        emsal_disi_30_toplam = round(emsal_ozet_tablo_all['30/70 KAPSAMINDA EMSAL DIŞI ALAN'].sum(),2)
+        emsal_disi_30_toplam = round(emsal_ozet_tablo_all['%30 KAPSAMINDA EMSAL DIŞI ALAN'].sum(),2)
 
         df_area_sum = df_emsal.groupby(["Level", 'Name', 'EmsalAlanTipi'])['Area'].sum().reset_index()
-        net_alan = df_rooms_ozet[~df_rooms_ozet['Eklenti/Degil']].groupby('BlokBagimsizBolumNo')['Area'].sum().reset_index().rename(columns={'Area': 'NetAlan'})
+        net_alan = df_rooms_ozet[df_rooms_ozet['Eklenti/Degil'] != 'Eklenti'].groupby('BlokBagimsizBolumNo')['Area'].sum().reset_index().rename(columns={'Area': 'NetAlan'})
         eklenti_net_alan = df_rooms_ozet[df_rooms_ozet['Eklenti/Degil']].groupby('BlokBagimsizBolumNo')['Area'].sum().reset_index().rename(columns={'Area': 'EklentiNetAlan'})
         brut_alan = df_bagimsiz_bolum[df_bagimsiz_bolum['Name'] == 'BAĞIMSIZ BÖLÜM'].groupby('BlokBagimsizBolumNo')['Area'].sum().reset_index().rename(columns={'Area': 'BrutAlan'})
         eklenti_brut_alan = df_bagimsiz_bolum[df_bagimsiz_bolum['Name'] == 'EKLENTİ ALAN'].groupby('BlokBagimsizBolumNo')['Area'].sum().reset_index().rename(columns={'Area': 'EklentiBrutAlan'})
