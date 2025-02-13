@@ -7,10 +7,11 @@ from viktor.parametrization import (
     Text,
 
 )
-from ifcopenshell import open as openIFC
+import ifcopenshell
 import pandas as pd
 import time
 from viktor.core import progress_message
+from func import calculate_dataframes
 
 PROGRESS_MESSAGE_DELAY = 2  # Adjust this based on your desired delay
 
@@ -26,8 +27,8 @@ def _use_correct_file(params) -> File:
 def _load_ifc_file(params):
     """Load ifc file into ifc model object."""
     ifc_upload = _use_correct_file(params)
-    path = ifc_upload.copy().source
-    model = openIFC(path)
+    ifc_path = ifc_upload.copy().source
+    model = ifcopenshell.open(ifc_path)
     return model
 
 def get_filtered_ifc_file(params, **kwargs) -> File:
@@ -128,180 +129,33 @@ class Controller(vkt.ViktorController):
         arsa_alani, taks, kaks = pset_arsa_bilgileri["ArsaAlani"], pset_arsa_bilgileri["TAKS"], pset_arsa_bilgileri["KAKS"]
         emsal_hakki=arsa_alani*kaks
         emsal_30_minha_hakki =emsal_hakki*.3
-        # Helper function to get a property's value from a property set
-        def get_pset_property(pset, property_name):
-            for prop in pset.HasProperties:
-                if prop.Name == property_name:
-                    return prop.NominalValue.wrappedValue if not prop.NominalValue.is_a('IfcBoolean') else prop.NominalValue.wrappedValue
-            return ''
+        arsa_alani = float(arsa_alani) if arsa_alani is not None else 0.0
+        taks = float(taks) if taks is not None else 0.0
+        kaks = float(kaks) if kaks is not None else 0.0
+        emsal_hakki = float(emsal_hakki)
+        emsal_30_minha_hakki = float(emsal_30_minha_hakki)
 
-        # Helper function to get the IfcBuildingStorey for a given IfcSpace
-        def get_building_storey(space):
-            for rel in space.Decomposes:
-                if rel.is_a('IfcRelAggregates') and rel.RelatingObject.is_a('IfcBuildingStorey'):
-                    return rel.RelatingObject.Name
-            return ''
-
-        # Get all spaces from the IFC file
-        spaces = model.by_type("IfcSpace")
-
-        # Extract the desired properties for each space
-        data = []
-        for space in spaces:
-            object_type = space.ObjectType or ''
-            name = space.Name or ''
-            long_name = space.LongName or ''
-            area = bagimsiz_bolum_no = blok_no = emsal_alan_tipi = eklenti_degil = ''
-            
-            for definition in space.IsDefinedBy:
-                if definition.is_a('IfcRelDefinesByProperties'):
-                    pset = definition.RelatingPropertyDefinition
-                    if pset.is_a('IfcPropertySet'):
-                        if pset.Name == 'Qto_Area':
-                            area = get_pset_property(pset, 'Area')
-                        elif pset.Name == 'Pset_BagimsizBolum':
-                            bagimsiz_bolum_no = get_pset_property(pset, 'BagimsizBolumNo')
-                            blok_no = get_pset_property(pset, 'BlokNo')
-                        elif pset.Name == 'Pset_EmsalAlanTipi':
-                            emsal_alan_tipi = get_pset_property(pset, 'EmsalAlanTipi')
-                        elif pset.Name == 'Pset_NetAlanTipi':
-                            eklenti_degil = get_pset_property(pset, 'Eklenti/Degil')
-            
-            building_storey = get_building_storey(space)
-            
-            data.append([object_type, name, long_name, area, bagimsiz_bolum_no, blok_no, emsal_alan_tipi, eklenti_degil, building_storey])
-
-        # Create a DataFrame from the extracted data
-        df = pd.DataFrame(data, columns=['ObjectType', 'Number', 'Name', 'Area', 'BagimsizBolumNo', 'BlokNo', 'EmsalAlanTipi', 'Eklenti/Degil', 'Level'])
-
-        # Get unique ObjectType values and create separate DataFrames for each
-        dfs = {obj_type: df[df['ObjectType'] == obj_type] for obj_type in df['ObjectType'].unique()}
-        alan_tipleri = df['ObjectType'].unique().tolist()
-        # Specific dataframes for different types
-        df_emsal = dfs.get('Emsal Alan', pd.DataFrame())
-        df_bagimsiz_bolum = dfs.get('Brüt Alan', pd.DataFrame())
-        df_rooms = dfs.get('Net Alan', pd.DataFrame()).copy()
-        df_rooms['BlokBagimsizBolumNo'] = df_rooms['BlokNo'] + df_rooms['BagimsizBolumNo'].astype(str)
-        df_rooms_ozet = df_rooms.pivot_table(
-            index=['BlokNo', 'BagimsizBolumNo','Eklenti/Degil','BlokBagimsizBolumNo'],  # Set your indexes
-            values='Area',                              # Set the value column
-            aggfunc='sum'                               # Aggregation function (sum, mean, etc.)
-        )
-        df_rooms_ozet= df_rooms_ozet.reset_index()
-        df_bagimsiz_bolum = df_bagimsiz_bolum.copy()
-        df_bagimsiz_bolum.loc[:, 'BlokBagimsizBolumNo'] = df_bagimsiz_bolum['BlokNo'] + df_bagimsiz_bolum['BagimsizBolumNo'].astype(str)
-        insaat_alani_toplam = round(df_bagimsiz_bolum['Area'].sum(),2)
-        # Convert the 'Area' column to numeric (coercing errors) using .loc
-        df_emsal.loc[:, 'Area'] = pd.to_numeric(df_emsal['Area'], errors='coerce')
-        # Calculate the total area (excluding rows with errors)
-        emsal_harici_toplam = df_emsal['Area'].dropna().sum()
-        # Calculate the used area
-        emsal_kullanilan_toplam = round((insaat_alani_toplam - emsal_harici_toplam),2)
-        # Filter out rows where 'EmsalAlanTipi' is null or empty
-        df_emsal_filtered = df_emsal[df_emsal['EmsalAlanTipi'].notna() & (df_emsal['EmsalAlanTipi'] != '')]
-        # Create the pivot table
-        emsal_ozet_tablo = df_emsal_filtered.pivot_table(
-            index='Level',
-            columns='EmsalAlanTipi', 
-            values='Area', 
-            aggfunc='sum'
-        ).reset_index()
-        # Calculate the new column
-        emsal_ozet_tablo['TOPLAM EMSAL DIŞI'] = emsal_ozet_tablo.get('%30 KAPSAMINDA EMSAL DIŞI ALAN', 0) + emsal_ozet_tablo.get('DOĞRUDAN EMSAL DIŞI ALAN', 0)
-        # Rename axis
-        emsal_ozet_tablo = emsal_ozet_tablo.rename_axis(None, axis=0)
-        insaat_alan_bylevel = df_bagimsiz_bolum.pivot_table(
-                    
-                        index='Level',
-                        values='Area', 
-                        aggfunc='sum'
-                    ).reset_index()
-        insaat_alan_bylevel = insaat_alan_bylevel.rename_axis(None, axis=0) 
-        emsal_ozet_tablo_all = pd.merge(emsal_ozet_tablo, insaat_alan_bylevel, on='Level', how='left')
-
-        emsal_ozet_tablo_all = emsal_ozet_tablo_all.rename(columns={'Area': 'İNŞAAT ALANI'})
-        emsal_ozet_tablo_all['EMSAL ALANI'] = emsal_ozet_tablo_all['İNŞAAT ALANI'] - emsal_ozet_tablo_all['TOPLAM EMSAL DIŞI']
-        desired_order = ['Level', 'İNŞAAT ALANI', 'TOPLAM EMSAL DIŞI', '%30 KAPSAMINDA EMSAL DIŞI ALAN', 'DOĞRUDAN EMSAL DIŞI ALAN', 'EMSAL ALANI']
-        emsal_ozet_tablo_all =emsal_ozet_tablo_all[desired_order]
-        emsal_disi_30_toplam = round(emsal_ozet_tablo_all['%30 KAPSAMINDA EMSAL DIŞI ALAN'].sum(),2)
-
-        df_area_sum = df_emsal.groupby(["Level", 'Name', 'EmsalAlanTipi'])['Area'].sum().reset_index()
-        net_alan = df_rooms_ozet[df_rooms_ozet['Eklenti/Degil'] != 'Eklenti'].groupby('BlokBagimsizBolumNo')['Area'].sum().reset_index().rename(columns={'Area': 'NetAlan'})
-        eklenti_net_alan = df_rooms_ozet[df_rooms_ozet['Eklenti/Degil']].groupby('BlokBagimsizBolumNo')['Area'].sum().reset_index().rename(columns={'Area': 'EklentiNetAlan'})
-        brut_alan = df_bagimsiz_bolum[df_bagimsiz_bolum['Name'] == 'BAĞIMSIZ BÖLÜM'].groupby('BlokBagimsizBolumNo')['Area'].sum().reset_index().rename(columns={'Area': 'BrutAlan'})
-        eklenti_brut_alan = df_bagimsiz_bolum[df_bagimsiz_bolum['Name'] == 'EKLENTİ ALAN'].groupby('BlokBagimsizBolumNo')['Area'].sum().reset_index().rename(columns={'Area': 'EklentiBrutAlan'})
-
-        unique_blok_bagimsiz_bolum_no = pd.DataFrame(df_bagimsiz_bolum['BlokBagimsizBolumNo'].unique(), columns=['BlokBagimsizBolumNo'])
-
-        final_df = unique_blok_bagimsiz_bolum_no \
-            .merge(net_alan, on='BlokBagimsizBolumNo', how='left') \
-            .merge(eklenti_net_alan, on='BlokBagimsizBolumNo', how='left') \
-            .merge(brut_alan, on='BlokBagimsizBolumNo', how='left') \
-            .merge(eklenti_brut_alan, on='BlokBagimsizBolumNo', how='left') \
-            .fillna(0)
-
-        metrekare_cetveli = final_df[final_df['BlokBagimsizBolumNo'] != '']
-        sum_of_ortak_alan_area = df_bagimsiz_bolum[df_bagimsiz_bolum['Name'] == 'ORTAK ALAN']['Area'].sum()
-        total_brut_alan = metrekare_cetveli['BrutAlan'].sum()
-
-        distribution_factor = sum_of_ortak_alan_area / total_brut_alan
-
-        metrekare_cetveli = metrekare_cetveli.copy()
-        metrekare_cetveli.loc[:, 'OrtakAlan'] = metrekare_cetveli['BrutAlan'] * distribution_factor
-        metrekare_cetveli.loc[:, 'ToplamBrutAlan'] = metrekare_cetveli[['BrutAlan', 'EklentiBrutAlan']].sum(axis=1)
-        metrekare_cetveli.loc[:, 'GenelBrutAlan'] = metrekare_cetveli['ToplamBrutAlan'] + metrekare_cetveli['OrtakAlan']
-
-        # Step 4: Calculating total_otopark_katsayisi
-        def calculate_otopark_katsayisi(brut_alan):
-            if brut_alan < 80:
-                return 0.33
-            elif brut_alan < 120:
-                return 0.5
-            elif brut_alan < 180:
-                return 1
-            else:
-                return 2
-
-        metrekare_cetveli.loc[:, 'OtoparkKatsayisi'] = metrekare_cetveli['BrutAlan'].apply(calculate_otopark_katsayisi)
-        total_otopark_adedi = str(round(metrekare_cetveli['OtoparkKatsayisi'].sum())) +" adet"
-
-        odasi_counts = df_rooms[df_rooms['Name'].str.contains('ODASI', na=False)].groupby('BlokBagimsizBolumNo').size().reset_index(name='OdaSayisi')
-        metrekare_cetveli = metrekare_cetveli.merge(odasi_counts, on='BlokBagimsizBolumNo', how='left').fillna(0)
-        metrekare_cetveli['OdaSayisi'] = metrekare_cetveli['OdaSayisi'].astype(int)
-
-        metrekare_cetveli['SiginakIhtiyaci'] = metrekare_cetveli['OdaSayisi'].apply(lambda x: 2 if x == 1 else (3 if x == 2 else (4 if x >= 3 else 0)))
-        total_siginak_ihtiyaci = str(metrekare_cetveli['SiginakIhtiyaci'].sum()) + " m²"
-
-        metrekare_cetveli = metrekare_cetveli.drop(columns=['OtoparkKatsayisi', 'OdaSayisi', 'SiginakIhtiyaci'])
-        metrekare_cetveli = metrekare_cetveli.map(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
-        emsal_ozet_tablo_all = emsal_ozet_tablo_all.map(lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x)
-  
+        results = calculate_dataframes(model, "room_data.csv")
+   
         if key == "metrekare_cetveli":
-            return metrekare_cetveli
+            return results["metrekare_cetveli"]
         elif key == "emsal_ozet_tablo_all":
-             return emsal_ozet_tablo_all
+             return results["emsal_ozet_tablo_all"]
         elif key == "total_siginak_ihtiyaci":
-             return total_siginak_ihtiyaci    
-        elif key == "total_otopark_adedi":
-             return total_otopark_adedi    
+             return results["total_siginak_ihtiyaci"]   
+        elif key == "total_otopark_ihtiyaci":
+             return results["total_otopark_ihtiyaci"]   
         elif key == "arsa_alani":
              return arsa_alani  
         elif key == "taks":
              return taks  
         elif key == "kaks":
              return kaks  
-        elif key == "emsal_kullanilan_toplam":
-             return emsal_kullanilan_toplam          
-        elif key == "insaat_alani_toplam":
-             return insaat_alani_toplam  
         elif key == "emsal_hakki":
              return emsal_hakki  
         elif key == "emsal_30_minha_hakki":
              return emsal_30_minha_hakki  
-        elif key == "emsal_disi_30_toplam":
-             return emsal_disi_30_toplam                              
-        elif key == "alan_tipleri":
-             return alan_tipleri       
+    
     @vkt.TableView("Metrekare Cetveli",duration_guess=1)
     def metrekare_view(self, params, **kwargs):
         metrekare_cetveli = self.get_data(params, "metrekare_cetveli")  # Fetch only metrekare_cetveli
@@ -333,20 +187,13 @@ class Controller(vkt.ViktorController):
                 )
             ),
             
-            # "Emsal Bilgileri" group
-            emsal_bilgileri=vkt.DataItem(
-                'Emsal Bilgileri', '', subgroup=vkt.DataGroup(
-                    toplam_insaat_alani=vkt.DataItem('Toplam inşaat alanı', self.get_data(params, "insaat_alani_toplam")),
-                    emsal_kullanilan=vkt.DataItem('Kullanılan emsal', self.get_data(params, "emsal_kullanilan_toplam")),
-                    emsal_disi_30_kullanilan=vkt.DataItem('Kullanılan %30 minha', self.get_data(params, "emsal_disi_30_toplam"))
-                )
-            ),
+
             
             # "İhtiyaçlar" group
             ihtiyaclar=vkt.DataItem(
                 'İhtiyaçlar', '', subgroup=vkt.DataGroup(
                     siginak_ihtiyaci=vkt.DataItem('Toplam sığınak ihtiyacı', self.get_data(params, "total_siginak_ihtiyaci")),
-                    otopark_ihtiyaci=vkt.DataItem('Toplam otopark ihtiyacı', self.get_data(params, "total_otopark_adedi"))
+                    otopark_ihtiyaci=vkt.DataItem('Toplam otopark ihtiyacı', self.get_data(params, "total_otopark_ihtiyaci"))
                 )
             )
         )
