@@ -12,6 +12,8 @@ import pandas as pd
 import time
 from viktor.core import progress_message
 from func import calculate_dataframes
+from viktor import WebResult
+from idscheck import load_ids_file, validate_ifc_ids
 
 PROGRESS_MESSAGE_DELAY = 2  # Adjust this based on your desired delay
 
@@ -33,27 +35,22 @@ def _load_ifc_file(params):
 
 def get_filtered_ifc_file(params, **kwargs) -> File:
     """
-    Filter an IFC file based on the IfcSpace ObjectType and return the filtered file. This method loads
-    the IFC file, then filters out IfcSpace elements based on ObjectType, and provides progress messages
-    during the filtering process, avoiding any flooding of the message queue.
-    Finally, it returns the filtered IFC as a VIKTOR file.
+    Filters an IFC file based on multiple IfcSpace ObjectType values.
     """
-    object_type_filter = params.page_1.option
+    selected_types = params.page_1.option  # This is now a list of selected options
 
     progress_message("Load IFC file...")
-    model = _load_ifc_file(params)  # Uses the load function you have
+    model = _load_ifc_file(params)
 
-    # Initialize the variables responsible for progress message delays
     delta_time = PROGRESS_MESSAGE_DELAY + 1
     start = time.time()
 
-    # Filter IfcSpace objects based on ObjectType
+    # Filter IfcSpace objects based on selected ObjectType values
     for space in model.by_type("IfcSpace"):
-        if space.ObjectType != object_type_filter:
+        if space.ObjectType not in selected_types:  # Check against a list
             if delta_time > PROGRESS_MESSAGE_DELAY:
-                # Avoid progress message queue flooding
                 start = time.time()
-                progress_message(f"Removing space: {space.get_info()['type']}")
+                progress_message(f"Removing space: {space.ObjectType}")
             model.remove(space)
         delta_time = time.time() - start
 
@@ -61,22 +58,22 @@ def get_filtered_ifc_file(params, **kwargs) -> File:
     for t in ("IfcElement", "IfcSite"):
         for element in model.by_type(t):
             if delta_time > PROGRESS_MESSAGE_DELAY:
-                # Avoid progress message queue flooding
                 start = time.time()
                 progress_message(f"Removing element: {element.get_info()['type']}")
             model.remove(element)
             delta_time = time.time() - start
 
-    # Save and export the filtered IFC model
     progress_message("Exporting file...")
     file = File()
     model.write(file.source)
     
     return file
 
+    
+    return file
+
 class Parametrization(vkt.Parametrization):
     page_1 = vkt.Page('IFC', views=["get_ifc_view"])
-    page_1.option = vkt.OptionField('This is an OptionField', options=['Net Alan', 'Emsal Alan', 'Brüt Alan'], default='Net Alan')
 
 
     page_1.text1 = Text(
@@ -101,8 +98,12 @@ Bir dosya yüklemesi yapılmaz ise uygulama varsayılan IFC dosyası'nı kullan�
         description="If you leave this empty, the app will use a default file.",
     )
 
-    page_2 = vkt.Page('Metrekare Cetveli', views=['metrekare_view'])
+    page_1.option = vkt.MultiSelectField('Gösterimi yapılacak şemalar', options=['Net Alan', 'Emsal Alan', 'Brüt Alan'], default=['Net Alan'])
+
+    page_2 = vkt.Page('IDS Validation', views=['ids_validation_view'])
     page_3 = vkt.Page('Emsal Özeti', views=['emsal_view'])
+    page_4 = vkt.Page('Metrekare Cetveli', views=['metrekare_view'])
+
 class Controller(vkt.ViktorController):
     label = "My Entity Type"
     parametrization = Parametrization(width=30)
@@ -135,16 +136,16 @@ class Controller(vkt.ViktorController):
         emsal_hakki = float(emsal_hakki)
         emsal_30_minha_hakki = float(emsal_30_minha_hakki)
 
-        results = calculate_dataframes(model, "room_data.csv")
+        results_func = calculate_dataframes(model, "room_data.csv")
    
         if key == "metrekare_cetveli":
-            return results["metrekare_cetveli"]
+            return results_func["metrekare_cetveli"]
         elif key == "emsal_ozet_tablo_all":
-             return results["emsal_ozet_tablo_all"]
+             return results_func["emsal_ozet_tablo_all"]
         elif key == "total_siginak_ihtiyaci":
-             return results["total_siginak_ihtiyaci"]   
+             return results_func["total_siginak_ihtiyaci"]   
         elif key == "total_otopark_ihtiyaci":
-             return results["total_otopark_ihtiyaci"]   
+             return results_func["total_otopark_ihtiyaci"]   
         elif key == "arsa_alani":
              return arsa_alani  
         elif key == "taks":
@@ -156,6 +157,20 @@ class Controller(vkt.ViktorController):
         elif key == "emsal_30_minha_hakki":
              return emsal_30_minha_hakki  
     
+    @vkt.WebView("IDS Validation Report", duration_guess=5)
+    def ids_validation_view(self, params, **kwargs):
+        # Get files
+        ifc_file = _load_ifc_file(params)
+        ids_file = File.from_path(Path(__file__).parent / "rules.ids")
+        
+        # Validate
+        try:
+            ids = load_ids_file(ids_file.source)
+            _, html_report = validate_ifc_ids(ifc_file, ids)
+            return WebResult(html=html_report)
+        except Exception as e:
+            return WebResult(html=f"<h2>Validation Error</h2><p>{str(e)}</p>")
+        
     @vkt.TableView("Metrekare Cetveli",duration_guess=1)
     def metrekare_view(self, params, **kwargs):
         metrekare_cetveli = self.get_data(params, "metrekare_cetveli")  # Fetch only metrekare_cetveli
@@ -200,3 +215,4 @@ class Controller(vkt.ViktorController):
         
         
         return vkt.IFCAndDataResult(model, data)
+    
