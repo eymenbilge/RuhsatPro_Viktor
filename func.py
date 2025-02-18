@@ -322,7 +322,7 @@ def calculate_dataframes(ifc_file, room_data_path: str):
 
     # Ensure "oda" and "salon" columns exist
     room_counts = room_counts.reindex(columns=["oda", "salon"], fill_value=0)
-    room_counts["ECB_Tipi"] = room_counts["oda"].astype(str) + "+" + room_counts["salon"].astype(str)
+    room_counts["Tipi"] = room_counts["oda"].astype(str) + "+" + room_counts["salon"].astype(str)
 
     # Merge with metrekare_cetveli
     metrekare_cetveli = metrekare_cetveli.merge(room_counts, on="BlokBagimsizBolumNo", how="left").fillna(0)
