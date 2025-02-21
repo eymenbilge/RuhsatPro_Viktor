@@ -1,4 +1,4 @@
-ifcopenshell==0.7.0.240521
+ifcopenshell==0.8.1
 ifctester==0.8.1
 pandas==2.2.3
 viktor==14.19.0

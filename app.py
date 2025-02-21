@@ -24,7 +24,7 @@ def _use_correct_file(params) -> File:
     """
     if params.page_1.ifc_upload:
         return params.page_1.ifc_upload.file
-    return File.from_path(Path(__file__).parent / "sample.ifc")
+    return File.from_path(Path(__file__).parent / "model.ifc")
 
 def _load_ifc_file(params):
     """Load ifc file into ifc model object."""
