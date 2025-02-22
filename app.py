@@ -12,10 +12,11 @@ import pandas as pd
 import time
 from viktor.core import progress_message
 from func import calculate_dataframes
-from viktor import WebResult
-from idscheck import load_ids_file, validate_ifc_ids
+#from viktor import WebResult
+#from idscheck import load_ids_file, validate_ifc_ids
 
-PROGRESS_MESSAGE_DELAY = 2  # Adjust this based on your desired delay
+
+PROGRESS_MESSAGE_DELAY = 10  # Adjust this based on your desired delay
 
 
 def _use_correct_file(params) -> File:
@@ -100,7 +101,7 @@ Bir dosya yüklemesi yapılmaz ise uygulama varsayılan IFC dosyası'nı kullan�
 
     page_1.option = vkt.MultiSelectField('Gösterimi yapılacak şemalar', options=['Net Alan', 'Emsal Alan', 'Brüt Alan'], default=['Net Alan'])
 
-    page_2 = vkt.Page('IDS Validation', views=['ids_validation_view'])
+    #page_2 = vkt.Page('IDS Validation', views=['ids_validation_view'])
     page_3 = vkt.Page('Emsal Özeti', views=['emsal_view'])
     page_4 = vkt.Page('Metrekare Cetveli', views=['metrekare_view'])
 
@@ -156,7 +157,7 @@ class Controller(vkt.ViktorController):
              return emsal_hakki  
         elif key == "emsal_30_minha_hakki":
              return emsal_30_minha_hakki  
-    
+    """
     @vkt.WebView("IDS Validation Report", duration_guess=5)
     def ids_validation_view(self, params, **kwargs):
         # Get files
@@ -170,7 +171,7 @@ class Controller(vkt.ViktorController):
             return WebResult(html=html_report)
         except Exception as e:
             return WebResult(html=f"<h2>Validation Error</h2><p>{str(e)}</p>")
-        
+    """    
     @vkt.TableView("Metrekare Cetveli",duration_guess=1)
     def metrekare_view(self, params, **kwargs):
         metrekare_cetveli = self.get_data(params, "metrekare_cetveli")  # Fetch only metrekare_cetveli
