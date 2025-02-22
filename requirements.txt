@@ -1,3 +1,4 @@
-ifcopenshell===0.7.0.240627
-pandas==2.2.3
-viktor==14.19.0
+ifcopenshell
+pandas
+ifctester
+viktor
