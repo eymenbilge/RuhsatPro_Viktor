@@ -5,7 +5,7 @@
     <ids:author>eymen@ecbarch.com</ids:author>
   </ids:info>
   <ids:specifications>
-    <ids:specification ifcVersion="IFC2X3 IFC4X3_ADD2" name="NetAlan_BagimsizBolum">
+    <ids:specification ifcVersion="IFC2X3 IFC4X3_ADD2 IFC4" name="NetAlan_BagimsizBolum">
       <ids:applicability minOccurs="1" maxOccurs="unbounded">
         <ids:entity>
           <ids:name>
@@ -40,7 +40,7 @@
         </ids:property>
       </ids:requirements>
     </ids:specification>
-    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3" name="BrütAlan_BagimsizBolum_EklentiAlan">
+    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3 IFC4" name="BrütAlan_BagimsizBolum_EklentiAlan">
       <ids:applicability minOccurs="1" maxOccurs="unbounded">
         <ids:entity>
           <ids:name>
@@ -86,7 +86,7 @@
         </ids:property>
       </ids:requirements>
     </ids:specification>
-    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3" name="EmsalAlan_EmsalAlanTipi&#xA;">
+    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3 IFC4" name="EmsalAlan_EmsalAlanTipi&#xA;">
       <ids:applicability minOccurs="1" maxOccurs="unbounded">
         <ids:entity>
           <ids:name>
@@ -119,7 +119,7 @@
         </ids:property>
       </ids:requirements>
     </ids:specification>
-    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3" name="BrütAlan_OrtakAlan&#xA;">
+    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3 IFC4" name="BrütAlan_OrtakAlan&#xA;">
       <ids:applicability minOccurs="1" maxOccurs="unbounded">
         <ids:entity>
           <ids:name>
@@ -154,7 +154,7 @@
         </ids:property>
       </ids:requirements>
     </ids:specification>
-    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3" name="IfcSite">
+    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3 IFC4" name="IfcSite">
       <ids:applicability minOccurs="1" maxOccurs="unbounded">
         <ids:entity>
           <ids:name>
@@ -189,7 +189,7 @@
         </ids:property>
       </ids:requirements>
     </ids:specification>
-    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3" name="BrütAlan_BagimsizBolum">
+    <ids:specification ifcVersion="IFC4X3_ADD2 IFC2X3 IFC4" name="BrütAlan_BagimsizBolum">
       <ids:applicability minOccurs="1" maxOccurs="unbounded">
         <ids:entity>
           <ids:name>

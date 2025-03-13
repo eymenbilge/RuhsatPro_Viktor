@@ -1,37 +1,98 @@
 import viktor as vkt
 from viktor import File
 from pathlib import Path
-import time
 from viktor.parametrization import FileField, Text
-import ifcopenshell
+from ifcopenshell import open as ifc_open
 from func import calculate_dataframes
 from viktor import WebResult
 from idscheck import load_ids_file, validate_ifc_ids
 
 
-PROGRESS_MESSAGE_DELAY = 10  # Adjust this based on your desired delay
+class AppCache:
+    """Central cache manager for IFC data."""
+    
+    def __init__(self):
+        self.ifc_model = None
+        self.site_data = None
+        self.calculation_results = None
+        self.ids_validation = None
+        
+    def clear(self):
+        """Clear all cached data."""
+        self.ifc_model = None
+        self.site_data = None
+        self.calculation_results = None
+        self.ids_validation = None
 
 
 def _use_correct_file(params) -> File:
-    """
-    Returns either an uploaded file or a default one.
-    """
+    """Returns either an uploaded file or a default one."""
     if params.page_1.ifc_upload:
         return params.page_1.ifc_upload.file
     return File.from_path(Path(__file__).parent / "model.ifc")
 
 
-def _load_ifc_file(params):
-    """Load IFC file into an IFC model object, caching the result per request."""
-    # Check if the model is already loaded and cached in params.
-    if hasattr(params, "_ifc_model"):
-        return params._ifc_model
+def _get_cache(params):
+    """Get or create the cache object."""
+    if not hasattr(params, "_app_cache"):
+        params._app_cache = AppCache()
+    return params._app_cache
 
-    ifc_upload = _use_correct_file(params)
-    ifc_path = ifc_upload.source  # Removed the unnecessary copy()
-    model = ifcopenshell.open(ifc_path)
-    params._ifc_model = model  # Cache the loaded model
-    return model
+
+def _load_ifc_file(params):
+    """Load IFC file with caching."""
+    cache = _get_cache(params)
+    
+    # Return cached model if available
+    if cache.ifc_model is not None:
+        return cache.ifc_model
+    
+    try:
+        ifc_upload = _use_correct_file(params)
+        ifc_path = ifc_upload.source
+        model = ifc_open(ifc_path)
+        cache.ifc_model = model
+        return model
+    except Exception as e:
+        print(f"Error loading IFC file: {e}")
+        return None
+
+
+def _extract_site_data(model):
+    """Extract site data from IFC model."""
+    if model is None:
+        return {
+            "arsa_alani": 0.0,
+            "taks": 0.0,
+            "kaks": 0.0,
+            "emsal_hakki": 0.0,
+            "emsal_30_minha_hakki": 0.0
+        }
+    
+    ifc_site = model.by_type("IfcSite")[0]
+    pset_arsa_bilgileri = {"ArsaAlani": None, "TAKS": None, "KAKS": None}
+    
+    for rel in ifc_site.IsDefinedBy:
+        if rel.is_a("IfcRelDefinesByProperties"):
+            property_set = rel.RelatingPropertyDefinition
+            for prop in property_set.HasProperties:
+                if prop.Name in pset_arsa_bilgileri:
+                    value = prop.NominalValue.wrappedValue
+                    pset_arsa_bilgileri[prop.Name] = float(value.split()[0]) if "m²" in value else float(value)
+    
+    arsa_alani = float(pset_arsa_bilgileri["ArsaAlani"] or 0.0)
+    taks = float(pset_arsa_bilgileri["TAKS"] or 0.0)
+    kaks = float(pset_arsa_bilgileri["KAKS"] or 0.0)
+    emsal_hakki = arsa_alani * kaks
+    emsal_30_minha_hakki = emsal_hakki * 0.3
+    
+    return {
+        "arsa_alani": arsa_alani,
+        "taks": taks,
+        "kaks": kaks,
+        "emsal_hakki": emsal_hakki,
+        "emsal_30_minha_hakki": emsal_30_minha_hakki
+    }
 
 
 class Parametrization(vkt.Parametrization):
@@ -67,86 +128,67 @@ class Controller(vkt.ViktorController):
     label = "My Entity Type"
     parametrization = Parametrization(width=30)
 
-    @staticmethod
-    def get_data(params, key: str):
-        model = _load_ifc_file(params)
-        ifc_site = model.by_type("IfcSite")[0]
-        # Dictionary to store the required values
-        pset_arsa_bilgileri = {"ArsaAlani": None, "TAKS": None, "KAKS": None}
-        # Loop through property sets of the IfcSite element
-        for rel in ifc_site.IsDefinedBy:
-            if rel.is_a("IfcRelDefinesByProperties"):
-                property_set = rel.RelatingPropertyDefinition
-                # Loop through properties in the property set
-                for prop in property_set.HasProperties:
-                    if prop.Name in pset_arsa_bilgileri:
-                        # Extract the numeric value and handle potential units like 'm²'
-                        value = prop.NominalValue.wrappedValue
-                        pset_arsa_bilgileri[prop.Name] = float(value.split()[0]) if "m²" in value else float(value)
-
-        # Assign extracted values to variables
-        arsa_alani, taks, kaks = (
-            pset_arsa_bilgileri["ArsaAlani"],
-            pset_arsa_bilgileri["TAKS"],
-            pset_arsa_bilgileri["KAKS"]
-        )
-        emsal_hakki = arsa_alani * kaks
-        emsal_30_minha_hakki = emsal_hakki * 0.3
-        arsa_alani = float(arsa_alani) if arsa_alani is not None else 0.0
-        taks = float(taks) if taks is not None else 0.0
-        kaks = float(kaks) if kaks is not None else 0.0
-        emsal_hakki = float(emsal_hakki)
-        emsal_30_minha_hakki = float(emsal_30_minha_hakki)
-
-        results_func = calculate_dataframes(model, "room_data.csv")
-
-        if key == "metrekare_cetveli":
-            return results_func["metrekare_cetveli"]
-        elif key == "emsal_ozet_tablo_all":
-            return results_func["emsal_ozet_tablo_all"]
-        elif key == "total_siginak_ihtiyaci":
-            return results_func["total_siginak_ihtiyaci"]
-        elif key == "total_otopark_ihtiyaci":
-            return results_func["total_otopark_ihtiyaci"]
-        elif key == "arsa_alani":
-            return arsa_alani
-        elif key == "taks":
-            return taks
-        elif key == "kaks":
-            return kaks
-        elif key == "emsal_hakki":
-            return emsal_hakki
-        elif key == "emsal_30_minha_hakki":
-            return emsal_30_minha_hakki
+    def get_data(self, params, key: str):
+        """Get data with comprehensive caching strategy."""
+        cache = _get_cache(params)
+        
+        # Get site data (with caching)
+        if key in ["arsa_alani", "taks", "kaks", "emsal_hakki", "emsal_30_minha_hakki"]:
+            if cache.site_data is None:
+                model = _load_ifc_file(params)
+                cache.site_data = _extract_site_data(model)
+            return cache.site_data[key]
+        
+        # Get calculation results (with caching)
+        if key in ["metrekare_cetveli", "emsal_ozet_tablo_all", "total_siginak_ihtiyaci", "total_otopark_ihtiyaci"]:
+            if cache.calculation_results is None:
+                model = _load_ifc_file(params)
+                # This is an expensive operation, do it only once
+                cache.calculation_results = calculate_dataframes(model, "room_data.csv")
+            return cache.calculation_results[key]
+        
+        return None
 
     @vkt.WebView("IDS Validation Report", duration_guess=5)
     def ids_validation_view(self, params, **kwargs):
-        # Get files
-        ifc_file = _load_ifc_file(params)
-        ids_file = File.from_path(Path(__file__).parent / "rules.ids")
-
-        # Validate
+        """IDS validation view with caching."""
+        cache = _get_cache(params)
+        
+        # Return cached validation if available
+        if cache.ids_validation is not None:
+            return WebResult(html=cache.ids_validation)
+        
+        # Get files and validate
         try:
+            model = _load_ifc_file(params)
+            ids_file = File.from_path(Path(__file__).parent / "rules.ids")
             ids = load_ids_file(ids_file.source)
-            _, html_report = validate_ifc_ids(ifc_file, ids)
+            _, html_report = validate_ifc_ids(model, ids)
+            
+            # Cache the result
+            cache.ids_validation = html_report
             return WebResult(html=html_report)
         except Exception as e:
             return WebResult(html=f"<h2>Validation Error</h2><p>{str(e)}</p>")
 
     @vkt.TableView("Metrekare Cetveli", duration_guess=1)
     def metrekare_view(self, params, **kwargs):
-        metrekare_cetveli = self.get_data(params, "metrekare_cetveli")  # Fetch only metrekare_cetveli
+        """Metrekare cetveli view."""
+        metrekare_cetveli = self.get_data(params, "metrekare_cetveli")
         return vkt.TableResult(metrekare_cetveli)
 
     @vkt.TableView("Emsal Özet Tablosu", duration_guess=1)
     def emsal_view(self, params, **kwargs):
-        emsal_ozet_tablo_all = self.get_data(params, "emsal_ozet_tablo_all")  # Fetch only emsal_ozet_tablo_all
+        """Emsal özet view."""
+        emsal_ozet_tablo_all = self.get_data(params, "emsal_ozet_tablo_all")
         return vkt.TableResult(emsal_ozet_tablo_all)
 
     @vkt.IFCAndDataView("IFC and data view", duration_guess=10)
     def get_ifc_view(self, params, **kwargs):
-        # Using the original file to show IFC model; this avoids re-loading the model.
+        """IFC view with all required data."""
+        # Using the original file to show IFC model
         model = _use_correct_file(params)
+        
         # Grouping the data as required
         data = vkt.DataGroup(
             # "Arsa Bilgileri" group

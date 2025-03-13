@@ -1,0 +1,9 @@
+from ..core import File
+from .external_program import ExternalProgram
+
+__all__ = ['RobotAnalysis']
+
+class RobotAnalysis(ExternalProgram):
+    def __init__(self, input_file: File, *, return_model: bool = True, return_results: bool = True, requested_results: dict = None) -> None: ...
+    def get_model_file(self) -> File | None: ...
+    def get_results(self) -> dict | None: ...
