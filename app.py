@@ -144,7 +144,7 @@ class Controller(vkt.ViktorController):
             if cache.calculation_results is None:
                 model = _load_ifc_file(params)
                 # This is an expensive operation, do it only once
-                cache.calculation_results = calculate_dataframes(model, "room_data.csv")
+                cache.calculation_results = calculate_dataframes(model, Path(__file__).parent / "room_data.csv")
             return cache.calculation_results[key]
         
         return None
